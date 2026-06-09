@@ -1,4 +1,4 @@
-# Current Bug: Embedded Session Fence Rejects Valid Tool Progress
+# 2026-06-09: Session Fence Rejects Tool Result Progress
 
 ## Status
 
