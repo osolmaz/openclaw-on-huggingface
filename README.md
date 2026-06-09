@@ -41,6 +41,8 @@ docs/resources.md                 Current HF/GitHub/GHCR resources
 docs/session-fence-root-cause.md  Root cause for Telegram reply failures
 docs/space-verification-plan.md   How to verify a fixed OpenClaw image on Spaces
 docs/ghcr-test-image.md           Temporary GHCR image plan
+docs/gemma-4-12b-inference-endpoint.md
+                                  Gemma 4 12B endpoint path
 tracking/2026-06-09-session-fence-tool-result-takeover.md
                                   Session-fence incident diagnosis
 tracking/decisions.md             Decisions made so far
