@@ -101,7 +101,15 @@ cleanup
 
 ## Implementation Plan
 
-### Phase 1: Inventory All Embedded Session Mutations
+This should be implemented as one coherent refactor, not as a sequence of
+partial fixes. The pull request is not complete until the controller exists,
+all embedded mutation paths have moved through it, misuse is blocked or
+test-detected, regression coverage exists, and the Hugging Face Space has been
+verified.
+
+### One-Pass Scope
+
+Audit, implement, migrate, harden, test, and verify in the same workstream.
 
 Audit direct and indirect mutation call sites under:
 
@@ -124,7 +132,7 @@ withSessionWriteLock(
 publishOwnedWrite
 ```
 
-Classify each mutation as:
+Classify each mutation while migrating it:
 
 ```text
 prompt-time write
@@ -135,13 +143,13 @@ test-only write
 non-embedded write
 ```
 
-Deliverable:
+The PR notes should include the final migration inventory:
 
 ```text
-docs or PR notes listing every embedded mutation path and its migration status
+every embedded mutation path and its final controller-backed status
 ```
 
-### Phase 2: Add SessionMutationController
+### Controller
 
 Build the controller on top of the existing session lock controller instead of
 adding a second lock system.
@@ -161,9 +169,11 @@ Nested writes must be safe. If a mutation is already inside an active write
 lock, the controller should reuse it and still publish the owned fingerprint
 once the mutation changes the file.
 
-### Phase 3: Migrate Confirmed Failing Paths
+### Required Migration Coverage
 
-Migrate the paths that have already failed on the Hugging Face Space:
+Migrate every embedded session mutation path in the same PR.
+
+Known production-failing paths:
 
 ```text
 auto-compaction transcript append
@@ -172,16 +182,7 @@ orphaned trailing user-message repair
 tool call / tool result persistence
 ```
 
-Acceptance for this phase:
-
-```text
-The current Telegram session can answer repeated messages without
-EmbeddedAttemptSessionTakeoverError.
-```
-
-### Phase 4: Migrate Remaining Embedded Mutation Paths
-
-Migrate the rest of the embedded runner write paths:
+Other embedded runner write paths that must be covered:
 
 ```text
 before_agent_run blocked-message persistence
@@ -199,9 +200,10 @@ cleanup/finalization writes
 Do not leave mixed ownership where some embedded writes use the controller and
 nearby writes still call `SessionManager` directly.
 
-### Phase 5: Make Misuse Hard
+### Misuse Prevention
 
-After migration, make direct embedded mutations visibly wrong.
+Direct embedded mutations must be visibly wrong before the PR is considered
+complete.
 
 Options, from lightest to strongest:
 
@@ -219,7 +221,7 @@ Use a narrow embedded-session mutation interface and add a script test that
 fails if new direct mutation calls are introduced under embedded runner code.
 ```
 
-### Phase 6: Regression Tests for the Bug Class
+### Regression Tests
 
 Add tests that prove the class is fixed, not only the latest incident.
 
@@ -237,7 +239,7 @@ Minimum regression cases:
 The last case is critical. The refactor must not disable real takeover
 protection.
 
-### Phase 7: Production Verification on Hugging Face
+### Production Verification on Hugging Face
 
 Build an OpenClaw image from the fixed branch and pin the test Space to it.
 
