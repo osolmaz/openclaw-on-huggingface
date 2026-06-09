@@ -2,8 +2,10 @@
 
 ## Status
 
-Active. This blocks reliable Telegram replies for the Hugging Face-hosted
-OpenClaw test deployment when the model uses tools.
+Active in the Hugging Face Space deployment. Current OpenClaw `origin/main`
+already has targeted session-fence tests passing for the known owned-write
+paths, so the leading fix path is to run the Space on an image that includes
+those fixes.
 
 ## What Happens
 
@@ -45,6 +47,34 @@ assistant tool call and tool result. Those writes change the file fingerprint.
 The fence later rejects the changed fingerprint instead of accepting it as the
 new valid OpenClaw-owned session state.
 
+The current test Space uses:
+
+```text
+FROM ghcr.io/openclaw/openclaw:latest
+```
+
+The deployed container is therefore sensitive to image freshness and Hugging
+Face rebuild behavior. If the Space is running an image built before the
+session-fence fixes, restarting or upgrading hardware is not enough; the Space
+must rebuild against a fixed image or a pinned test image.
+
+Relevant upstream commits seen in current `origin/main`:
+
+```text
+2bb00f6726d refreshes the prompt fence after owned session-manager appends
+65fb56513fb refreshes/publishes prompt-fence state around locked writes
+bbfe8ccaf60 refreshes the prompt fence after compaction writes
+```
+
+Targeted local verification on current source:
+
+```text
+pnpm exec vitest run src/agents/embedded-agent-runner/run/attempt.session-lock.test.ts
+
+Test Files  2 passed (2)
+Tests       98 passed (98)
+```
+
 ## Correct Fix Location
 
 OpenClaw core:
@@ -80,3 +110,9 @@ The Space logs must not contain:
 EmbeddedAttemptSessionTakeoverError
 session file changed while embedded prompt lock was released
 ```
+
+## Next Fix Step
+
+Build or select an OpenClaw image that includes at least `bbfe8ccaf60`, point
+the test Space at that pinned image, rebuild the Space, and rerun the Telegram
+`which model are you` test.
