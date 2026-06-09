@@ -7,10 +7,10 @@ environment.
 
 - The OpenClaw fix exists in a branch of `openclaw/openclaw`.
 - Regression tests pass locally in OpenClaw.
-- A temporary container image has been pushed, for example:
+- A temporary container image has been pushed:
 
 ```text
-ghcr.io/osolmaz/openclaw:hf-session-fence-test
+ghcr.io/osolmaz/openclaw-live-test:hf-5e1fbca3
 ```
 
 ## Space Change
@@ -18,13 +18,13 @@ ghcr.io/osolmaz/openclaw:hf-session-fence-test
 Update the test Space Dockerfile from:
 
 ```dockerfile
-FROM ghcr.io/openclaw/openclaw:latest
+FROM ghcr.io/openclaw/openclaw:2026.6.5-beta.13
 ```
 
 to:
 
 ```dockerfile
-FROM ghcr.io/osolmaz/openclaw:hf-session-fence-test
+FROM ghcr.io/osolmaz/openclaw-live-test:hf-5e1fbca3
 ```
 
 Use the private test Space first:
@@ -34,6 +34,15 @@ osolmaz/onurclawtest
 ```
 
 Do not update the public template until the test Space passes.
+
+Current test Space commit:
+
+```text
+58551d6a638bef36d2c5968c1c5d2f9f31480b0e
+```
+
+Current status as of `2026-06-09`: build succeeded, Space is `RUNNING`, gateway
+is ready, and Telegram polling started.
 
 ## Verification
 
