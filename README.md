@@ -39,8 +39,8 @@ docs/session-fence-root-cause.md
 ```text
 docs/resources.md                 Current HF/GitHub/GHCR resources
 docs/session-fence-root-cause.md  Root cause for Telegram reply failures
-docs/2026-06-09-session-mutation-controller-refactor-plan.md
-                                  Long-term OpenClaw session mutation fix plan
+docs/2026-06-09-embedded-transcript-mutation-ownership-refactor-plan.md
+                                  Long-term embedded transcript ownership fix plan
 docs/space-verification-plan.md   How to verify a fixed OpenClaw image on Spaces
 docs/ghcr-test-image.md           Temporary GHCR image plan
 docs/gemma-4-12b-inference-endpoint.md

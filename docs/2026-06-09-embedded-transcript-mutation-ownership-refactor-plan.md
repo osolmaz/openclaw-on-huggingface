@@ -1,15 +1,16 @@
-# 2026-06-09: Session Mutation Controller Refactor Plan
+# 2026-06-09: Embedded Transcript Mutation Ownership Refactor Plan
 
 ## Goal
 
 Eliminate the recurring OpenClaw embedded-session takeover failures caused by
-OpenClaw-owned session writes that are invisible to the embedded session fence.
+OpenClaw-owned embedded transcript writes that are invisible to the embedded
+session fence.
 
 The target end state is simple:
 
 ```text
-If OpenClaw changes a session file, the write lock and session fence are updated
-in the same operation.
+If OpenClaw changes an active transcript file, the write lock and session fence
+are updated in the same operation.
 ```
 
 This is an OpenClaw core fix. Hugging Face Spaces are the production-like
@@ -17,12 +18,13 @@ verification environment, not the cause of the bug.
 
 ## Problem
 
-The embedded runner correctly protects session files from external concurrent
-writes. It does this by remembering a session-file fingerprint while the prompt
-lock is released and checking that fingerprint later.
+The embedded runner correctly protects active transcript files from external
+concurrent writes. It does this by remembering an active transcript-file
+fingerprint while the prompt lock is released and checking that fingerprint
+later.
 
-The problem is that OpenClaw itself mutates the same session file from multiple
-places:
+The problem is that OpenClaw itself mutates the same active transcript file from
+multiple places:
 
 ```text
 message_end persistence
@@ -40,7 +42,42 @@ the generic channel error after a model response.
 
 ## Design Rule
 
-Raw session mutation must not be available inside embedded runs.
+Raw embedded transcript mutation must not be available inside embedded runs.
+
+This is about transcript mutation ownership, not session metadata storage.
+OpenClaw has related work that moves session metadata to SQLite, but that does
+not remove the active transcript mutation problem by itself. The controller
+should be storage-neutral: it should work for the current JSONL transcript files
+and still be the right boundary if transcript storage later moves behind a
+SQLite-backed implementation.
+
+## Relationship To Existing Session Work
+
+This plan should compose with the existing session/accessor seam work instead
+of replacing it.
+
+Relevant nearby work:
+
+```text
+#90775: compaction-specific prompt-fence fix
+#91322: session metadata moved to SQLite on main
+#89124: auto-reply sessions through session seam
+#89201: transcript runtime identity contract
+#89519: session entry lifecycle seam
+#90439: embedded run session target seam
+```
+
+The distinction is:
+
+```text
+metadata storage answers where session metadata lives
+runtime identity seams answer how callers name session targets
+transcript mutation ownership answers who is allowed to mutate active transcript state
+```
+
+The controller should use the best available session/accessor seam if it lands
+first. It should not duplicate the SQLite metadata migration or depend on a
+specific transcript storage backend.
 
 Embedded code should not call these directly:
 
@@ -53,14 +90,14 @@ flushSessionManagerFile(...)
 rewriteTranscript(...)
 ```
 
-Instead, embedded code should call one mutation API that owns:
+Instead, embedded code should call one transcript mutation API that owns:
 
 ```text
 1. acquire or reuse the session write lock
-2. assert the current session-file fence
+2. assert the current active transcript-file fence
 3. read the pre-write fingerprint
 4. apply the mutation
-5. flush the session file if needed
+5. flush the active transcript file if needed
 6. publish the OpenClaw-owned fingerprint
 7. refresh in-memory session state
 8. release the lock
@@ -71,13 +108,13 @@ Instead, embedded code should call one mutation API that owns:
 Introduce a controller near the embedded runner lock code:
 
 ```text
-src/agents/embedded-agent-runner/run/session-mutation-controller.ts
+src/agents/embedded-agent-runner/run/embedded-transcript-mutation-controller.ts
 ```
 
 Working shape:
 
 ```ts
-await sessionMutations.run("repair-orphaned-user-message", async (session) => {
+await transcriptMutations.run("repair-orphaned-user-message", async (session) => {
   session.branch(parentId);
   session.appendMessage(userMessage);
 });
@@ -171,7 +208,7 @@ once the mutation changes the file.
 
 ### Required Migration Coverage
 
-Migrate every embedded session mutation path in the same PR.
+Migrate every embedded transcript mutation path in the same PR.
 
 Known production-failing paths:
 
@@ -209,7 +246,7 @@ Options, from lightest to strongest:
 
 ```text
 add comments and tests around forbidden direct writes
-add a repo-local lint/script check for direct SessionManager writes in embedded runner files
+add a repo-local lint/script check for direct SessionManager transcript writes in embedded runner files
 hide raw SessionManager behind a narrower embedded-session interface
 make the controller the only object passed into mutation-heavy embedded code
 ```
@@ -217,7 +254,7 @@ make the controller the only object passed into mutation-heavy embedded code
 Preferred production path:
 
 ```text
-Use a narrow embedded-session mutation interface and add a script test that
+Use a narrow embedded transcript mutation interface and add a script test that
 fails if new direct mutation calls are introduced under embedded runner code.
 ```
 
@@ -302,8 +339,9 @@ publishing a fence for a failed or partial write
 This plan does not require:
 
 ```text
-rewriting the session file format
+rewriting the active transcript file format
 removing append-only transcript semantics
+replacing the session metadata SQLite migration
 changing Hugging Face storage
 changing Telegram delivery
 changing model provider
@@ -315,7 +353,7 @@ disabling tools
 The refactor is complete when:
 
 ```text
-1. Embedded session mutations go through the controller.
+1. Embedded transcript mutations go through the controller.
 2. Direct embedded `SessionManager` writes are blocked or test-detected.
 3. Regression tests cover owned writes and real external takeover.
 4. The Hugging Face Space completes repeated Telegram prompts without the
