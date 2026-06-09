@@ -13,6 +13,12 @@ environment.
 ghcr.io/osolmaz/openclaw-live-test:hf-5e1fbca3
 ```
 
+Current deployed fix image:
+
+```text
+ghcr.io/osolmaz/openclaw-live-test:hf-53e662fb
+```
+
 ## Space Change
 
 Update the test Space Dockerfile from:
@@ -24,7 +30,7 @@ FROM ghcr.io/openclaw/openclaw:2026.6.5-beta.13
 to:
 
 ```dockerfile
-FROM ghcr.io/osolmaz/openclaw-live-test:hf-5e1fbca3
+FROM ghcr.io/osolmaz/openclaw-live-test:hf-53e662fb
 ```
 
 Use the private test Space first:
@@ -38,11 +44,12 @@ Do not update the public template until the test Space passes.
 Current test Space commit:
 
 ```text
-58551d6a638bef36d2c5968c1c5d2f9f31480b0e
+0251267002af2274cdd289185f2beaf053ae084b
 ```
 
 Current status as of `2026-06-09`: build succeeded, Space is `RUNNING`, gateway
-is ready, and Telegram polling started.
+is ready, Telegram polling started, and Telegram `getMe` passed from inside the
+Space.
 
 ## Verification
 
@@ -98,3 +105,8 @@ The fix is verified on Spaces only when all of these are true:
 - The user receives a normal assistant reply.
 - No session takeover error appears in logs.
 - The session JSONL shows a complete tool-call turn.
+
+For the auto-compaction regression, the same pass criteria apply but the
+expected internal write is a compaction row instead of a tool result. A
+compaction row written by OpenClaw during prompt execution must not trigger
+`EmbeddedAttemptSessionTakeoverError`.

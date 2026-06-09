@@ -2,7 +2,7 @@
 
 ## Summary
 
-The Telegram reply failure is an OpenClaw embedded-session locking bug.
+The Telegram reply failures are OpenClaw embedded-session locking bugs.
 
 It is not caused by Telegram delivery, Hugging Face network egress, Hugging Face
 Spaces as a product, Qwen, or Hugging Face Inference Providers.
@@ -98,7 +98,7 @@ fingerprint as a session takeover.
 ## Exact Problem
 
 OpenClaw changed the session file itself, but the embedded prompt fence did not
-accept the resulting file state as the valid current state.
+always accept the resulting file state as the valid current state.
 
 The fence should distinguish:
 
@@ -112,7 +112,21 @@ from:
 external/session-takeover mutation
 ```
 
-In this case it treated OpenClaw-owned transcript progress as takeover.
+In the tool-result case it treated OpenClaw-owned transcript progress as
+takeover.
+
+The later `please continue` failure was the same class of bug through a
+different write path. Auto-compaction appended a compaction row while the
+embedded prompt lock was released:
+
+```text
+embedded run auto-compaction start
+embedded run auto-compaction complete
+EmbeddedAttemptSessionTakeoverError: session file changed while embedded prompt lock was released
+```
+
+The failed user message did not persist. The only new session row around the
+failure was the OpenClaw-owned compaction row.
 
 ## Proper Fix
 
@@ -125,9 +139,9 @@ src/agents/embedded-agent-runner/run/attempt.session-lock.ts
 The fix must preserve real takeover protection while accepting valid OpenClaw
 internal transcript writes during model/tool execution.
 
-Also audit non-message session writes such as compaction and custom entries,
-because normal message writes use the guarded persistence path but not every
-session-file write does.
+Tool-result writes must publish their owned-write checkpoint to the session
+fence. Auto-compaction writes must do the same when `AgentSession` appends the
+compaction row during prompt execution.
 
 ## Non-Fixes
 
