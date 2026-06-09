@@ -45,6 +45,8 @@ docs/gemma-4-12b-inference-endpoint.md
                                   Gemma 4 12B endpoint path
 tracking/2026-06-09-session-fence-tool-result-takeover.md
                                   Session-fence incident diagnosis
+tracking/2026-06-09-online-search-session-fence-takeover.md
+                                  Online-search session-fence incident
 tracking/decisions.md             Decisions made so far
 ```
 
