@@ -197,11 +197,122 @@ def inspect_database(path: Path) -> dict[str, Any]:
             con.close()
     except Exception as exc:  # noqa: BLE001
         result["sqlite_error"] = {"type": type(exc).__name__, "message": str(exc)}
+        try:
+            con = sqlite3.connect(f"file:{path}?immutable=1", uri=True, timeout=10)
+            try:
+                result["immutable_journal_mode"] = con.execute("PRAGMA journal_mode").fetchone()[0]
+                result["immutable_page_size"] = con.execute("PRAGMA page_size").fetchone()[0]
+                result["immutable_page_count"] = con.execute("PRAGMA page_count").fetchone()[0]
+                result["immutable_integrity_check"] = con.execute("PRAGMA integrity_check").fetchone()[0]
+            finally:
+                con.close()
+        except Exception as immutable_exc:  # noqa: BLE001
+            result["immutable_sqlite_error"] = {
+                "type": type(immutable_exc).__name__,
+                "message": str(immutable_exc),
+            }
 
     raw = inspect_raw_pages(path)
     result.update(raw)
     result["ok"] = result.get("integrity_check") == "ok" and not raw.get("invalid_child_pointers")
     return result
+
+
+def find_child_pointer_to_page(data: bytes, page_size: int, target_page: int) -> dict[str, int] | None:
+    physical_pages = len(data) // page_size
+    for page_no in range(1, physical_pages + 1):
+        start = (page_no - 1) * page_size
+        hdr = start + (PAGE_HEADER_SIZE if page_no == 1 else 0)
+        if hdr >= len(data):
+            continue
+        page_type = data[hdr]
+        if page_type not in (0x02, 0x05):
+            continue
+        cell_count = int.from_bytes(data[hdr + 3 : hdr + 5], "big")
+        right_child = int.from_bytes(data[hdr + 8 : hdr + 12], "big")
+        if right_child == target_page:
+            return {"page": page_no, "kind": page_type, "right_child": right_child}
+        cell_ptr_base = hdr + 12
+        for cell_index in range(cell_count):
+            ptr = int.from_bytes(data[cell_ptr_base + cell_index * 2 : cell_ptr_base + cell_index * 2 + 2], "big")
+            absolute = start + ptr
+            if absolute + 4 > len(data):
+                continue
+            child = int.from_bytes(data[absolute : absolute + 4], "big")
+            if child == target_page:
+                return {"page": page_no, "kind": page_type, "cell": cell_index, "child": child}
+    return None
+
+
+def create_torn_checkpoint_signature(args: argparse.Namespace) -> None:
+    db = Path(args.db)
+    out = Path(args.out)
+    remove_sqlite_family(db)
+    remove_sqlite_family(out)
+    db.parent.mkdir(parents=True, exist_ok=True)
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    con = connect(db)
+    create_schema(con)
+    inserted = 0
+    while inserted < args.rows:
+        con.execute("BEGIN IMMEDIATE")
+        now = int(time.time() * 1000)
+        for _ in range(args.batch_size):
+            inserted += 1
+            con.execute(
+                """
+                INSERT INTO plugin_state_entries (
+                  plugin_id, namespace, entry_key, value_json, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "telegram",
+                    "dedupe",
+                    f"torn:{inserted:012d}",
+                    value_payload("torn", inserted, args.payload_bytes),
+                    now + inserted,
+                    None,
+                ),
+            )
+            if inserted >= args.rows:
+                break
+        con.commit()
+    con.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchall()
+    con.close()
+
+    data = bytearray(db.read_bytes())
+    page_size = struct.unpack(">H", data[16:18])[0]
+    if page_size == 1:
+        page_size = 65536
+    page_count = struct.unpack(">I", data[28:32])[0]
+    if page_count < 2:
+        raise SystemExit("database did not grow enough to make a torn copy")
+
+    pointer = find_child_pointer_to_page(bytes(data), page_size, page_count)
+    if pointer is None:
+        raise SystemExit(
+            f"could not find an interior b-tree pointer to final page {page_count}; "
+            "increase --rows or --payload-bytes"
+        )
+
+    torn_page_count = page_count - 1
+    data[28:32] = torn_page_count.to_bytes(4, "big")
+    torn_size = torn_page_count * page_size
+    out.write_bytes(data[:torn_size])
+    print_json(
+        {
+            "event": "create-torn",
+            "source": str(db),
+            "out": str(out),
+            "rows": inserted,
+            "original_page_count": page_count,
+            "torn_page_count": torn_page_count,
+            "pointer_to_removed_page": pointer,
+            "source_inspect": inspect_database(db),
+            "torn_inspect": inspect_database(out),
+        }
+    )
 
 
 def file_info(path: Path) -> dict[str, Any]:
@@ -310,6 +421,14 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_parser = sub.add_parser("inspect")
     inspect_parser.add_argument("--db", required=True)
     inspect_parser.set_defaults(func=inspect_command)
+
+    torn_parser = sub.add_parser("create-torn")
+    torn_parser.add_argument("--db", required=True, help="Healthy source database to create")
+    torn_parser.add_argument("--out", required=True, help="Torn/corrupt database copy to write")
+    torn_parser.add_argument("--rows", type=int, default=5000)
+    torn_parser.add_argument("--batch-size", type=int, default=50)
+    torn_parser.add_argument("--payload-bytes", type=int, default=2048)
+    torn_parser.set_defaults(func=create_torn_checkpoint_signature)
 
     return parser
 
